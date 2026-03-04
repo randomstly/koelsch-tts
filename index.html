@@ -272,6 +272,44 @@
     }
     .modul-badge.m2 { background: #fff3e0; color: #b85c00; }
     .modul-badge.m3 { background: #e8f5e9; color: #1a7a1a; }
+    .modul-badge.m5 { background: #e8f0ff; color: #1a3a9a; }
+
+    /* ── Modul 5 – TTS ── */
+    .btn-tts {
+      background: #1a3a9a;
+      color: white;
+      font-weight: bold;
+    }
+    .btn-tts:hover:not(:disabled) { background: #122a78; }
+    .btn-tts.spricht {
+      background: #7a1a9a;
+      animation: puls 1.2s ease-in-out infinite;
+    }
+    @keyframes puls {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.7; }
+    }
+    .tts-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      background: #f4f6ff;
+      border: 1px solid #d0d8f0;
+      color: #555;
+      min-height: 36px;
+    }
+    .tts-status.spricht  { background: #f0e8ff; border-color: #9060c0; color: #5a1a8a; }
+    .tts-status.fehler   { background: #fff0f0; border-color: #C8102E; color: #a00; }
+    .tts-status.fertig   { background: #f0fff0; border-color: #2a8a2a; color: #1a6a1a; }
+    .tts-hinweis {
+      font-size: 0.75rem;
+      color: #aaa;
+      margin-top: 4px;
+    }
 
     footer {
       text-align: center;
@@ -318,6 +356,10 @@
       <button class="btn-llm"    id="btnLLM"         onclick="llmFallbackAusfuehren()" style="display:none;">
         ✨ LLM-Lücken füllen (Modul 3)
       </button>
+      <button class="btn-tts" id="btnVorlesen" onclick="ttsVorlesen()" disabled>
+        🔊 Kölsch vorlesen (Modul 5)
+      </button>
+      <button class="btn-secondary" id="btnStopp" onclick="ttsStoppen()" style="display:none;">⏹ Stopp</button>
       <button class="btn-secondary" onclick="leeren()">✕ Leeren</button>
       <button class="btn-secondary" onclick="kopieren()">⎘ Kölsch kopieren</button>
     </div>
@@ -326,6 +368,12 @@
     <div class="modul3-status inaktiv" id="modul3Status">
       <span id="modul3StatusText">LLM-Fallback bereit – klicke „LLM-Lücken füllen" wenn [?…?]-Wörter vorhanden</span>
     </div>
+
+    <!-- Modul-5-TTS-Statuszeile -->
+    <div class="tts-status" id="ttsStatus">
+      <span id="ttsStatusText">🔊 TTS bereit – übersetze zuerst, dann vorlesen</span>
+    </div>
+    <div class="tts-hinweis" id="ttsHinweis"></div>
 
     <div id="ladenStatus" class="laden-status"></div>
   </div>
@@ -395,16 +443,17 @@
 
   <!-- ── Hinweisbox ── -->
   <div class="info-box">
-    <strong>Aktueller Stand (Modul 2+3):</strong><br>
+    <strong>Aktueller Stand (Modul 2+3+5):</strong><br>
     <span class="modul-badge m2">Modul 2</span> Regelbasierte Übersetzung läuft im Browser.
     <span class="modul-badge m3">Modul 3</span> LLM-Fallback füllt <code>[?…?]</code>-Lücken via Cloudflare Worker → Claude API.
-    Trage die Worker-URL oben ein, dann wird der Button automatisch aktiv wenn Lücken vorhanden sind.
+    <span class="modul-badge m5">Modul 5</span> Web Speech API liest Kölsch-Ausgabe vor (Stufe A).
+    Trage die Worker-URL oben ein, dann wird der LLM-Button aktiv wenn Lücken vorhanden sind.
   </div>
 
 </main>
 
 <footer>
-  Kölsch TTS – Masterthesis | Modul 2+3: Regelbasiert + LLM-Fallback | Datenquelle: Kölsch-Akademie
+  Kölsch TTS – Masterthesis | Modul 2+3+5: Regelbasiert + LLM-Fallback + TTS | Datenquelle: Kölsch-Akademie
 </footer>
 
 <!-- Skripte: Wörterbuch zuerst, dann Translator -->
@@ -477,6 +526,11 @@ function uebersetzeMitStatistik() {
 
   document.getElementById("ausgabe").value = result.uebersetzung;
   document.getElementById("ausgabe").classList.remove("llm-aktiv");
+
+  // Modul 5: Vorlesen-Button aktivieren
+  ttsStoppen();
+  document.getElementById("btnVorlesen").disabled = false;
+  setTtsStatus("neutral", "🔊 Bereit – kölsche Übersetzung vorlesen");
 
   // Statistik anzeigen
   const s = result.statistik;
@@ -573,6 +627,9 @@ async function llmFallbackAusfuehren() {
     // Modul-3-Ergebnis speichern (für Modul 5)
     _letzterM2Result.uebersetzungFinal = data.uebersetzung;
 
+    // Modul 5: Vorlesen-Button auf finales Ergebnis hinweisen
+    setTtsStatus("neutral", "🔊 Bereit – vollständige Kölsch-Übersetzung (inkl. LLM) vorlesen");
+
     setModul3Status("fertig", `✓ LLM hat ${unbekannteWoerter.length} Lücke(n) gefüllt – Ergebnis bereit für Modul 5`);
     btnLLM.disabled = true; // einmal reicht
 
@@ -614,6 +671,10 @@ function leeren() {
   document.getElementById("btnLLM").style.display = "none";
   setModul3Status("inaktiv", "LLM-Fallback bereit");
   _letzterM2Result = null;
+  // Modul 5: TTS zurücksetzen
+  ttsStoppen();
+  document.getElementById("btnVorlesen").disabled = true;
+  setTtsStatus("neutral", "🔊 TTS bereit – übersetze zuerst, dann vorlesen");
 }
 
 function kopieren() {
@@ -629,6 +690,167 @@ function kopieren() {
 function ladeBeispiel(btn) {
   document.getElementById("eingabe").value = btn.textContent.trim();
   uebersetzeMitStatistik();
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  MODUL 5 – TTS Sprachsynthese (Stufe A: Web Speech API)
+// ════════════════════════════════════════════════════════════════════
+
+// Phonetik-Mapping: Kölsche Sonderformen → annähernde Aussprache für de-DE TTS
+const KOELSCH_PHONETIK = [
+  // Grundvokabular
+  [/\bdat\b/gi,    "das"],
+  [/\bdät\b/gi,    "des"],
+  [/\bnit\b/gi,    "nicht"],
+  [/\bnix\b/gi,    "nicks"],
+  [/\bhä\b/gi,     "hä"],
+  [/\bjä\b/gi,     "jä"],
+  [/\bnä\b/gi,     "nä"],
+  [/\bkütt\b/gi,   "kütt"],   // kommt → klingend wie kütt
+  [/\bjesaat\b/gi, "gesaht"],
+  [/\bjedonn\b/gi, "gedohn"],
+  [/\bgonn\b/gi,   "gonn"],
+  [/\bgohn\b/gi,   "gohn"],
+  [/\boch\b/gi,    "och"],
+  [/\baan\b/gi,    "an"],
+  [/\bääver\b/gi,  "äwer"],
+  [/\bäver\b/gi,   "äwer"],
+  [/\baff\b/gi,    "af"],
+  [/\bop\b/gi,     "op"],
+  [/\büvver\b/gi,  "üwer"],
+  [/\büvver\b/gi,  "üwer"],
+  [/\bmit\b/gi,    "mit"],
+  [/\bmir\b/gi,    "mir"],
+  [/\bdir\b/gi,    "dir"],
+  [/\bich\b/gi,    "ich"],
+  [/\bich\b/gi,    "ich"],
+  [/\bdoch\b/gi,   "doch"],
+  [/\bwat\b/gi,    "wat"],
+  [/\bwann\b/gi,   "wann"],
+  [/\bwo\b/gi,     "wo"],
+  [/\bwie\b/gi,    "wie"],
+  [/\bdem\b/gi,    "dem"],
+  [/\bden\b/gi,    "den"],
+  [/\bder\b/gi,    "der"],
+  [/\bdie\b/gi,    "die"],
+  [/\bdat\b/gi,    "das"],
+  // Kölsche Endungen & Besonderheiten
+  [/jemaat/gi,     "gemacht"],
+  [/jenumme/gi,    "genommen"],
+  [/jescheck/gi,   "gescheckt"],
+  [/\bjetz\b/gi,   "jetzt"],
+  [/\bäns\b/gi,    "eins"],
+  [/\bzwäi\b/gi,   "zwei"],
+  [/\bdrei\b/gi,   "drei"],
+  // [?…?] Platzhalter bereinigen
+  [/\[\?[^\]]*\?\]/g, ""],
+];
+
+function ttsPhonetikmapping(text) {
+  let t = text;
+  for (const [pattern, ersatz] of KOELSCH_PHONETIK) {
+    t = t.replace(pattern, ersatz);
+  }
+  return t.trim();
+}
+
+function setTtsStatus(typ, text) {
+  const el = document.getElementById("ttsStatus");
+  const tx = document.getElementById("ttsStatusText");
+  // Klassen zurücksetzen
+  el.className = "tts-status";
+  if (typ === "spricht") el.classList.add("spricht");
+  else if (typ === "fehler")  el.classList.add("fehler");
+  else if (typ === "fertig")  el.classList.add("fertig");
+  tx.textContent = text || "";
+}
+
+let _ttsUtterance = null;
+
+function ttsVorlesen() {
+  if (!("speechSynthesis" in window)) {
+    setTtsStatus("fehler", "✗ Web Speech API nicht verfügbar. Bitte Chrome verwenden.");
+    document.getElementById("ttsHinweis").textContent = "Empfehlung: Google Chrome für beste TTS-Unterstützung.";
+    return;
+  }
+
+  // Text aus Ausgabe-Textarea holen (nimmt finales Ergebnis, egal ob M2 oder M3)
+  const rohtext = document.getElementById("ausgabe").value.trim();
+  if (!rohtext) {
+    setTtsStatus("fehler", "✗ Kein Text vorhanden – bitte zuerst übersetzen.");
+    return;
+  }
+
+  // Laufende Ausgabe stoppen
+  window.speechSynthesis.cancel();
+
+  const sprechtext = ttsPhonetikmapping(rohtext);
+
+  const utterance = new SpeechSynthesisUtterance(sprechtext);
+  utterance.lang  = "de-DE";
+  utterance.rate  = 0.88;
+  utterance.pitch = 1.0;
+
+  // Kölnische Stimme bevorzugen (falls vorhanden, sonst Deutsch-Fallback)
+  const stimmen = window.speechSynthesis.getVoices();
+  const bevorzugt = stimmen.find(v =>
+    v.lang === "de-DE" && (v.name.includes("Google") || v.name.includes("Microsoft"))
+  ) || stimmen.find(v => v.lang === "de-DE") || null;
+  if (bevorzugt) utterance.voice = bevorzugt;
+
+  _ttsUtterance = utterance;
+
+  // UI
+  const btnV = document.getElementById("btnVorlesen");
+  const btnS = document.getElementById("btnStopp");
+  btnV.classList.add("spricht");
+  btnV.disabled = true;
+  btnS.style.display = "inline-block";
+  setTtsStatus("spricht", "🎙 Wird vorgelesen… (Kölsch-Phonetik aktiv)");
+
+  utterance.onend = () => {
+    btnV.classList.remove("spricht");
+    btnV.disabled = false;
+    btnS.style.display = "none";
+    setTtsStatus("fertig", "✓ Vorlesen abgeschlossen");
+    // Browser-Bug: speechSynthesis hängt sich manchmal auf → sicherheitshalber cancel
+    window.speechSynthesis.cancel();
+  };
+
+  utterance.onerror = (e) => {
+    btnV.classList.remove("spricht");
+    btnV.disabled = false;
+    btnS.style.display = "none";
+    if (e.error === "interrupted") {
+      setTtsStatus("neutral", "🔊 Vorlesen unterbrochen");
+    } else {
+      setTtsStatus("fehler", `✗ TTS-Fehler: ${e.error} – Chrome empfohlen`);
+    }
+  };
+
+  // Chrome-Bug: Voices manchmal noch nicht geladen → kurz warten
+  setTimeout(() => {
+    window.speechSynthesis.speak(utterance);
+  }, 80);
+
+  // Browser-Hinweis falls nicht Chrome
+  const isChrome = /Chrome/.test(navigator.userAgent) && !/Edg/.test(navigator.userAgent);
+  document.getElementById("ttsHinweis").textContent = isChrome
+    ? ""
+    : "ℹ Hinweis: Web Speech API funktioniert am zuverlässigsten in Google Chrome.";
+}
+
+function ttsStoppen() {
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+  }
+  const btnV = document.getElementById("btnVorlesen");
+  const btnS = document.getElementById("btnStopp");
+  if (btnV) {
+    btnV.classList.remove("spricht");
+    btnV.disabled = (document.getElementById("ausgabe").value.trim() === "");
+  }
+  if (btnS) btnS.style.display = "none";
 }
 </script>
 

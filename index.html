@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kölsch TTS – Übersetzungsengine</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      color: #222;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #C8102E;
+      color: white;
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    header h1 { font-size: 1.25rem; font-weight: bold; }
+    header span { font-size: 0.85rem; opacity: 0.85; }
+    .badge {
+      background: rgba(255,255,255,0.2);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 0.75rem;
+      margin-left: auto;
+    }
+
+    main {
+      max-width: 860px;
+      margin: 28px auto;
+      padding: 0 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 8px;
+      padding: 20px 24px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    }
+    .card h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #888;
+      margin-bottom: 10px;
+    }
+
+    .uebersetzer {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 600px) { .uebersetzer { grid-template-columns: 1fr; } }
+
+    textarea {
+      width: 100%;
+      height: 140px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 12px;
+      font-size: 1rem;
+      font-family: Arial, sans-serif;
+      resize: vertical;
+      transition: border-color 0.2s;
+    }
+    textarea:focus { outline: none; border-color: #C8102E; }
+    textarea[readonly] {
+      background: #fafafa;
+      color: #333;
+    }
+    textarea.llm-aktiv {
+      background: #f0fff0;
+      border-color: #2a8a2a;
+      transition: background 0.4s, border-color 0.4s;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+
+    button {
+      padding: 9px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-family: Arial, sans-serif;
+      transition: background 0.15s;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .btn-primary {
+      background: #C8102E;
+      color: white;
+      font-weight: bold;
+    }
+    .btn-primary:hover:not(:disabled) { background: #a00d24; }
+    .btn-secondary {
+      background: #eee;
+      color: #444;
+    }
+    .btn-secondary:hover:not(:disabled) { background: #ddd; }
+    .btn-llm {
+      background: #1a7a1a;
+      color: white;
+      font-weight: bold;
+    }
+    .btn-llm:hover:not(:disabled) { background: #145e14; }
+
+    /* ── Modul-3-Statusleiste ── */
+    .modul3-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      background: #f8f8f8;
+      border: 1px solid #eee;
+      min-height: 40px;
+      transition: background 0.3s;
+    }
+    .modul3-status.ladend   { background: #fffbf0; border-color: #f0c040; }
+    .modul3-status.fertig   { background: #f0fff0; border-color: #2a8a2a; }
+    .modul3-status.fehler   { background: #fff0f0; border-color: #C8102E; }
+    .modul3-status.inaktiv  { color: #aaa; }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid #ddd;
+      border-top-color: #C8102E;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Worker-URL Konfiguration ── */
+    .worker-config {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .worker-config input {
+      flex: 1;
+      padding: 7px 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-family: monospace;
+    }
+    .worker-config input:focus { outline: none; border-color: #C8102E; }
+    .worker-config label { font-size: 0.82rem; color: #666; white-space: nowrap; }
+    .worker-url-hint { font-size: 0.78rem; color: #aaa; margin-top: 4px; }
+
+    /* ── Statistik ── */
+    .statistik {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .stat-box {
+      flex: 1;
+      min-width: 110px;
+      background: #f8f8f8;
+      border-radius: 6px;
+      padding: 10px 14px;
+      text-align: center;
+      border: 1px solid #eee;
+    }
+    .stat-zahl {
+      font-size: 1.6rem;
+      font-weight: bold;
+      color: #C8102E;
+    }
+    .stat-label {
+      font-size: 0.75rem;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    .unbekannte-liste {
+      margin-top: 12px;
+      font-size: 0.88rem;
+      color: #666;
+    }
+    .unbekannte-liste strong { color: #C8102E; }
+    .unbekannte-tag {
+      display: inline-block;
+      background: #fff3f3;
+      border: 1px solid #ffcccc;
+      border-radius: 4px;
+      padding: 1px 7px;
+      margin: 2px;
+      font-size: 0.82rem;
+      color: #a00;
+    }
+    .unbekannte-tag.geloest {
+      background: #f0fff0;
+      border-color: #aaddaa;
+      color: #2a8a2a;
+      text-decoration: line-through;
+    }
+
+    .beispiele {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .beispiel-btn {
+      background: #f0f0f0;
+      border: 1px solid #ddd;
+      border-radius: 20px;
+      padding: 5px 14px;
+      font-size: 0.82rem;
+      color: #444;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .beispiel-btn:hover {
+      background: #C8102E;
+      color: white;
+      border-color: #C8102E;
+    }
+
+    .info-box {
+      background: #fffbf0;
+      border-left: 3px solid #f0a500;
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      color: #555;
+      border-radius: 0 6px 6px 0;
+    }
+    .info-box strong { color: #333; }
+
+    .laden-status {
+      font-size: 0.82rem;
+      color: #888;
+      margin-top: 6px;
+    }
+    .laden-ok   { color: #2a8a2a; }
+    .laden-warn { color: #b85c00; }
+    .laden-err  { color: #C8102E; }
+
+    /* Module-Badges in Statusleiste */
+    .modul-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 0.75rem;
+      font-weight: bold;
+      background: #eee;
+      color: #666;
+    }
+    .modul-badge.m2 { background: #fff3e0; color: #b85c00; }
+    .modul-badge.m3 { background: #e8f5e9; color: #1a7a1a; }
+
+    footer {
+      text-align: center;
+      padding: 20px;
+      font-size: 0.78rem;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🗣 Kölsch TTS – Übersetzungsengine</h1>
+    <span>Modul 2+3 &nbsp;|&nbsp; Deutsch → Kölsch (regelbasiert + LLM-Fallback)</span>
+  </div>
+  <span class="badge" id="wbStatus">Wörterbuch wird geladen…</span>
+</header>
+
+<main>
+
+  <!-- ── Übersetzer ── -->
+  <div class="card">
+    <h2>Übersetzer</h2>
+    <div class="uebersetzer">
+      <div>
+        <label for="eingabe" style="font-size:0.85rem;color:#555;display:block;margin-bottom:6px;">
+          🇩🇪 Deutsch (Eingabe)
+        </label>
+        <textarea id="eingabe"
+          placeholder="Deutschen Text eingeben…"
+          spellcheck="false">Ich gehe heute nach Hause und trinke ein Bier mit meinem Freund.</textarea>
+      </div>
+      <div>
+        <label for="ausgabe" style="font-size:0.85rem;color:#555;display:block;margin-bottom:6px;">
+          🟡 Kölsch (Ausgabe)
+        </label>
+        <textarea id="ausgabe" readonly placeholder="Übersetzung erscheint hier…"></textarea>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-primary" id="btnUebersetzen" onclick="uebersetzeMitStatistik()">▶ Übersetzen</button>
+      <button class="btn-llm"    id="btnLLM"         onclick="llmFallbackAusfuehren()" style="display:none;">
+        ✨ LLM-Lücken füllen (Modul 3)
+      </button>
+      <button class="btn-secondary" onclick="leeren()">✕ Leeren</button>
+      <button class="btn-secondary" onclick="kopieren()">⎘ Kölsch kopieren</button>
+    </div>
+
+    <!-- Modul-3-Statuszeile -->
+    <div class="modul3-status inaktiv" id="modul3Status">
+      <span id="modul3StatusText">LLM-Fallback bereit – klicke „LLM-Lücken füllen" wenn [?…?]-Wörter vorhanden</span>
+    </div>
+
+    <div id="ladenStatus" class="laden-status"></div>
+  </div>
+
+  <!-- ── Worker-Konfiguration ── -->
+  <div class="card" id="workerConfigCard">
+    <h2>⚙ Modul 3 – Worker-Konfiguration</h2>
+    <div class="worker-config">
+      <label for="workerUrl">Cloudflare Worker URL:</label>
+      <input type="url" id="workerUrl"
+        placeholder="https://koelsch-proxy.DEIN-USERNAME.workers.dev"
+        value="">
+    </div>
+    <div class="worker-url-hint">
+      Trage hier die URL deines Cloudflare Workers ein. Sie wird im Browser gespeichert (localStorage).
+      Der Worker leitet Anfragen mit dem API-Key an Claude weiter.
+    </div>
+  </div>
+
+  <!-- ── Statistik ── -->
+  <div class="card" id="statistikCard" style="display:none;">
+    <h2>Übersetzungsstatistik</h2>
+    <div class="statistik">
+      <div class="stat-box">
+        <div class="stat-zahl" id="statGesamt">0</div>
+        <div class="stat-label">Wörter gesamt</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-zahl" id="statWb" style="color:#2a8a2a;">0</div>
+        <div class="stat-label">Wörterbuch-Treffer</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-zahl" id="statRegeln" style="color:#f0a500;">0</div>
+        <div class="stat-label">Über Regeln</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-zahl" id="statUnb" style="color:#C8102E;">0</div>
+        <div class="stat-label">Unbekannt [?…?]</div>
+      </div>
+    </div>
+
+    <div class="unbekannte-liste" id="unbekannteContainer" style="display:none;">
+      <strong>Unbekannte Wörter</strong>
+      <span class="modul-badge m2">Modul 2</span>
+      → wird an LLM übergeben
+      <span class="modul-badge m3">Modul 3</span>:<br>
+      <div id="unbekannteTags" style="margin-top:6px;"></div>
+    </div>
+  </div>
+
+  <!-- ── Beispielsätze ── -->
+  <div class="card">
+    <h2>Beispielsätze zum Testen</h2>
+    <div class="beispiele">
+      <button class="beispiel-btn" onclick="ladeBeispiel(this)">Ich gehe heute nach Hause.</button>
+      <button class="beispiel-btn" onclick="ladeBeispiel(this)">Wir spielen morgen Fußball.</button>
+      <button class="beispiel-btn" onclick="ladeBeispiel(this)">Er trinkt gern Bier mit seinen Freunden.</button>
+      <button class="beispiel-btn" onclick="ladeBeispiel(this)">Das Haus steht auf dem Berg.</button>
+      <button class="beispiel-btn" onclick="ladeBeispiel(this)">Sie arbeitet nicht mehr in der Stadt.</button>
+      <button class="beispiel-btn" onclick="ladeBeispiel(this)">Komm mal her und schau dir das an!</button>
+      <button class="beispiel-btn" onclick="ladeBeispiel(this)">Ich verstehe das auch nicht.</button>
+      <button class="beispiel-btn" onclick="ladeBeispiel(this)">Das Wetter ist schön, es ist warm.</button>
+      <button class="beispiel-btn" onclick="ladeBeispiel(this)">Morgen fahre ich mit meiner Familie ins Kino.</button>
+      <button class="beispiel-btn" onclick="ladeBeispiel(this)">Der Zug kommt um acht Uhr am Bahnhof an.</button>
+    </div>
+  </div>
+
+  <!-- ── Hinweisbox ── -->
+  <div class="info-box">
+    <strong>Aktueller Stand (Modul 2+3):</strong><br>
+    <span class="modul-badge m2">Modul 2</span> Regelbasierte Übersetzung läuft im Browser.
+    <span class="modul-badge m3">Modul 3</span> LLM-Fallback füllt <code>[?…?]</code>-Lücken via Cloudflare Worker → Claude API.
+    Trage die Worker-URL oben ein, dann wird der Button automatisch aktiv wenn Lücken vorhanden sind.
+  </div>
+
+</main>
+
+<footer>
+  Kölsch TTS – Masterthesis | Modul 2+3: Regelbasiert + LLM-Fallback | Datenquelle: Kölsch-Akademie
+</footer>
+
+<!-- Skripte: Wörterbuch zuerst, dann Translator -->
+<script src="woerterbuch.js"></script>
+<script src="translator.js"></script>
+
+<script>
+// ════════════════════════════════════════════════════════════════════
+//  MODUL 2 – Zustand
+// ════════════════════════════════════════════════════════════════════
+let _letzterM2Result = null; // Hält das letzte Modul-2-Ergebnis
+
+// ════════════════════════════════════════════════════════════════════
+//  Initialisierung
+// ════════════════════════════════════════════════════════════════════
+window.addEventListener("load", function () {
+  const badge  = document.getElementById("wbStatus");
+  const status = document.getElementById("ladenStatus");
+
+  if (typeof KOELSCH_WOERTERBUCH !== "undefined") {
+    const anzahl = Object.keys(KOELSCH_WOERTERBUCH).length.toLocaleString("de-DE");
+    badge.textContent = `✓ ${anzahl} Einträge geladen`;
+    badge.style.background = "rgba(42,138,42,0.3)";
+  } else {
+    badge.textContent = "⚠ Wörterbuch fehlt";
+    badge.style.background = "rgba(200,16,46,0.3)";
+    status.className   = "laden-status laden-err";
+    status.textContent = "woerterbuch.js nicht gefunden.";
+  }
+
+  // Worker-URL aus localStorage laden
+  const gespeicherteUrl = localStorage.getItem("koelsch_worker_url");
+  if (gespeicherteUrl) {
+    document.getElementById("workerUrl").value = gespeicherteUrl;
+  }
+
+  // Worker-URL automatisch speichern bei Änderung
+  document.getElementById("workerUrl").addEventListener("input", function () {
+    localStorage.setItem("koelsch_worker_url", this.value.trim());
+  });
+
+  // Beim Laden direkt übersetzen
+  uebersetzeMitStatistik();
+});
+
+// Enter in Eingabe → Übersetzen
+document.addEventListener("DOMContentLoaded", function () {
+  document.getElementById("eingabe").addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      uebersetzeMitStatistik();
+    }
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════
+//  MODUL 2 – Übersetzen
+// ════════════════════════════════════════════════════════════════════
+function uebersetzeMitStatistik() {
+  const eingabe = document.getElementById("eingabe").value;
+  if (!eingabe.trim()) return;
+
+  if (typeof KoelschTranslator === "undefined") {
+    document.getElementById("ausgabe").value = "Fehler: translator.js nicht geladen.";
+    return;
+  }
+
+  const result = KoelschTranslator.uebersetze(eingabe);
+  _letzterM2Result = result;
+
+  document.getElementById("ausgabe").value = result.uebersetzung;
+  document.getElementById("ausgabe").classList.remove("llm-aktiv");
+
+  // Statistik anzeigen
+  const s = result.statistik;
+  document.getElementById("statGesamt").textContent = s.gesamt;
+  document.getElementById("statWb").textContent     = s.woerterb;
+  document.getElementById("statRegeln").textContent = s.regeln;
+  document.getElementById("statUnb").textContent    = s.unbekannt;
+  document.getElementById("statistikCard").style.display = "block";
+
+  // Unbekannte Wörter anzeigen
+  const unbContainer = document.getElementById("unbekannteContainer");
+  const unbTags      = document.getElementById("unbekannteTags");
+
+  if (result.unbekannteWoerter && result.unbekannteWoerter.length > 0) {
+    unbTags.innerHTML = result.unbekannteWoerter
+      .map(w => `<span class="unbekannte-tag" id="tag-${w.replace(/\W/g,'_')}">${w}</span>`)
+      .join(" ");
+    unbContainer.style.display = "block";
+
+    // LLM-Button einblenden
+    const workerUrl = document.getElementById("workerUrl").value.trim();
+    const btnLLM = document.getElementById("btnLLM");
+    btnLLM.style.display = "inline-block";
+    btnLLM.disabled = false;
+
+    setModul3Status("inaktiv", `${result.unbekannteWoerter.length} Lücke(n) gefunden – „LLM-Lücken füllen" klicken${workerUrl ? "" : " (Worker-URL fehlt)"}`);
+  } else {
+    unbContainer.style.display = "none";
+    document.getElementById("btnLLM").style.display = "none";
+    setModul3Status("fertig", "✓ Vollständig übersetzt – keine Lücken");
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  MODUL 3 – LLM-Fallback
+// ════════════════════════════════════════════════════════════════════
+async function llmFallbackAusfuehren() {
+  if (!_letzterM2Result) return;
+
+  const workerUrl = document.getElementById("workerUrl").value.trim();
+  if (!workerUrl) {
+    setModul3Status("fehler", "⚠ Bitte Worker-URL oben eintragen (z. B. https://koelsch-proxy.xxx.workers.dev)");
+    return;
+  }
+
+  const { uebersetzung, unbekannteWoerter } = _letzterM2Result;
+  if (!unbekannteWoerter || unbekannteWoerter.length === 0) {
+    setModul3Status("fertig", "✓ Keine Lücken vorhanden");
+    return;
+  }
+
+  // UI sperren
+  const btnLLM = document.getElementById("btnLLM");
+  const btnUeb = document.getElementById("btnUebersetzen");
+  btnLLM.disabled = true;
+  btnUeb.disabled = true;
+  setModul3Status("ladend", null, true);
+
+  try {
+    const response = await fetch(workerUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        markedText:    uebersetzung,
+        unknownWords:  unbekannteWoerter,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`Worker antwortet mit ${response.status}: ${err}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.uebersetzung) {
+      throw new Error("Leere Antwort vom Worker");
+    }
+
+    // Ausgabe aktualisieren
+    const ausgabe = document.getElementById("ausgabe");
+    ausgabe.value = data.uebersetzung;
+    ausgabe.classList.add("llm-aktiv");
+
+    // Statistik: Unbekannte auf 0 setzen
+    document.getElementById("statUnb").textContent = "0";
+
+    // Tags als gelöst markieren
+    unbekannteWoerter.forEach(w => {
+      const tag = document.getElementById("tag-" + w.replace(/\W/g, "_"));
+      if (tag) tag.className = "unbekannte-tag geloest";
+    });
+
+    // Modul-3-Ergebnis speichern (für Modul 5)
+    _letzterM2Result.uebersetzungFinal = data.uebersetzung;
+
+    setModul3Status("fertig", `✓ LLM hat ${unbekannteWoerter.length} Lücke(n) gefüllt – Ergebnis bereit für Modul 5`);
+    btnLLM.disabled = true; // einmal reicht
+
+  } catch (err) {
+    setModul3Status("fehler", `✗ Fehler: ${err.message}`);
+    btnLLM.disabled = false;
+  } finally {
+    btnUeb.disabled = false;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Hilfsfunktionen
+// ════════════════════════════════════════════════════════════════════
+function setModul3Status(typ, text, spinner = false) {
+  const el = document.getElementById("modul3Status");
+  const tx = document.getElementById("modul3StatusText");
+  el.className = `modul3-status ${typ}`;
+
+  // Spinner entfernen/hinzufügen
+  const oldSpinner = el.querySelector(".spinner");
+  if (oldSpinner) oldSpinner.remove();
+
+  if (spinner) {
+    const sp = document.createElement("div");
+    sp.className = "spinner";
+    el.insertBefore(sp, tx);
+    tx.textContent = "Claude übersetzt Lücken…";
+  } else {
+    tx.textContent = text || "";
+  }
+}
+
+function leeren() {
+  document.getElementById("eingabe").value  = "";
+  document.getElementById("ausgabe").value  = "";
+  document.getElementById("ausgabe").classList.remove("llm-aktiv");
+  document.getElementById("statistikCard").style.display = "none";
+  document.getElementById("btnLLM").style.display = "none";
+  setModul3Status("inaktiv", "LLM-Fallback bereit");
+  _letzterM2Result = null;
+}
+
+function kopieren() {
+  const text = document.getElementById("ausgabe").value;
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = event.target;
+    btn.textContent = "✓ Kopiert!";
+    setTimeout(() => btn.textContent = "⎘ Kölsch kopieren", 1500);
+  });
+}
+
+function ladeBeispiel(btn) {
+  document.getElementById("eingabe").value = btn.textContent.trim();
+  uebersetzeMitStatistik();
+}
+</script>
+
+</body>
+</html>

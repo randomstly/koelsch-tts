@@ -331,8 +331,8 @@ function regelergebnisTauglich(form, gefeuert) {
 // ─────────────────────────────────────────────────────────────
 //  VARIANTENAUSWAHL (Schicht 1)
 // ─────────────────────────────────────────────────────────────
-// Rund 1.000 der 27.585 Wörterbucheinträge führen mehrere kölsche
-// Formen in einem Feld, getrennt durch "/" oder ";".
+// Ein Teil der Wörterbucheinträge führt mehrere kölsche Formen in
+// einem Feld, getrennt durch "/", ";" oder ",".
 // Modul 2 benötigt je Eingabewort genau eine Schreibform.
 // Gewählt wird die erste Form, weil die Reihenfolge der Formen aus
 // dem Online-Wörterbuch der Kölsch-Akademie stammt und damit eine
@@ -340,7 +340,7 @@ function regelergebnisTauglich(form, gefeuert) {
 // sondern werden als Nebeninformation zurückgegeben.
 function waehleVariante(wert) {
   const teile = String(wert)
-    .split(/[\/;]/)
+    .split(/[\/;,]/)
     .map(t => t.trim())
     .filter(t => t !== "");
 
@@ -348,6 +348,20 @@ function waehleVariante(wert) {
     return { gewaehlt: String(wert).trim(), weitere: [] };
   }
   return { gewaehlt: teile[0], weitere: teile.slice(1) };
+}
+
+// Jede Stufe, die eine Form aus einer Datenquelle ausgibt, läuft über
+// diesen Weg: erste Form in die Übersetzung, übrige als Nebeninformation.
+function gibAus(wert, token, istSatzanf, varianten) {
+  const auswahl = waehleVariante(wert);
+  if (auswahl.weitere.length > 0) {
+    varianten.push({
+      wort:     token,
+      gewaehlt: auswahl.gewaehlt,
+      weitere:  auswahl.weitere
+    });
+  }
+  return passeSchreibungAn(auswahl.gewaehlt, token, istSatzanf);
 }
 
 function uebersetze(text) {
@@ -386,7 +400,7 @@ function uebersetze(text) {
     );
     if (wortRegel) {
       const koelsch = token.replace(wortRegel.von, wortRegel.zu);
-      ergebnisse.push(passeSchreibungAn(koelsch, token, istSatzanf));
+      ergebnisse.push(gibAus(koelsch, token, istSatzanf, varianten));
       statistik.woerterb++;
       continue;
     }
@@ -414,7 +428,7 @@ function uebersetze(text) {
       hilfsverbTreffer = HILFSVERB_KONJUGATION[suchSchluessel];
     }
     if (hilfsverbTreffer) {
-      ergebnisse.push(passeSchreibungAn(hilfsverbTreffer, token, istSatzanf));
+      ergebnisse.push(gibAus(hilfsverbTreffer, token, istSatzanf, varianten));
       statistik.woerterb++;
       continue;
     }
@@ -423,7 +437,7 @@ function uebersetze(text) {
     // Konjugierte Formen (ich/du/er-Formen) die nicht im Wörterbuch stehen,
     // weil die Kölsch-Akademie sie nur im Paradigma der Grundform speichert.
     if (VERB_KONJUGATION[suchSchluessel]) {
-      ergebnisse.push(passeSchreibungAn(VERB_KONJUGATION[suchSchluessel], token, istSatzanf));
+      ergebnisse.push(gibAus(VERB_KONJUGATION[suchSchluessel], token, istSatzanf, varianten));
       statistik.woerterb++;
       continue;
     }
@@ -432,15 +446,7 @@ function uebersetze(text) {
     if (typeof KOELSCH_WOERTERBUCH !== "undefined"
         && KOELSCH_WOERTERBUCH[suchSchluessel]) {
 
-      const auswahl = waehleVariante(KOELSCH_WOERTERBUCH[suchSchluessel]);
-      if (auswahl.weitere.length > 0) {
-        varianten.push({
-          wort:     token,
-          gewaehlt: auswahl.gewaehlt,
-          weitere:  auswahl.weitere
-        });
-      }
-      ergebnisse.push(passeSchreibungAn(auswahl.gewaehlt, token, istSatzanf));
+      ergebnisse.push(gibAus(KOELSCH_WOERTERBUCH[suchSchluessel], token, istSatzanf, varianten));
       statistik.woerterb++;
       continue;
     }
@@ -485,8 +491,8 @@ function uebersetze(text) {
 
 if (typeof module !== "undefined" && module.exports) {
   // Node.js
-  module.exports = { uebersetze, wendeRegelnAn, waehleVariante, regelergebnisTauglich, PHONOLOGISCHE_REGELN };
+  module.exports = { uebersetze, wendeRegelnAn, waehleVariante, gibAus, regelergebnisTauglich, PHONOLOGISCHE_REGELN };
 } else {
   // Browser: global verfügbar
-  window.KoelschTranslator = { uebersetze, wendeRegelnAn, waehleVariante, regelergebnisTauglich, PHONOLOGISCHE_REGELN };
+  window.KoelschTranslator = { uebersetze, wendeRegelnAn, waehleVariante, gibAus, regelergebnisTauglich, PHONOLOGISCHE_REGELN };
 }

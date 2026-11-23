@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Deutsch → Kölsch</title>
+  <title>Der Kölsch-Üvversetzer</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -260,12 +260,36 @@
       margin-top: 4px;
     }
 
+    /* ── Hinweiskasten: zwei Spalten ── */
+    .hinweis-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (max-width: 760px) {
+      .hinweis-grid { grid-template-columns: 1fr; gap: 18px; }
+    }
+    .varianten-liste { font-size: 0.88rem; color: #666; }
+    .varianten-einleitung { display: block; }
+    .varianten-zeile {
+      margin: 4px 0;
+      line-height: 1.45;
+    }
+    .varianten-nr {
+      color: #C8102E;
+      font-weight: bold;
+      margin-right: 6px;
+    }
+    .varianten-wort { color: #222; }
+    .varianten-weitere { color: #777; }
+
   </style>
 </head>
 <body>
 
 <header>
-  <h1>Deutsch → Kölsch</h1>
+  <h1>Der Kölsch-Üvversetzer</h1>
   <button class="btn-einstellungen" id="btnEinstellungen"
           onclick="einstellungenUmschalten()" title="Einstellungen">&#9881;</button>
 </header>
@@ -316,12 +340,26 @@
     <div id="ladenStatus" class="laden-status"></div>
   </div>
 
-  <!-- ── Unbekannte Wörter ── -->
+  <!-- ── Hinweise zur Übersetzung ── -->
   <div class="card" id="unbekannteCard" style="display:none;">
-    <h2>Unbekannte Wörter</h2>
-    <div class="unbekannte-liste">
-      <span id="unbekannteHinweis"></span>
-      <div id="unbekannteTags" style="margin-top:8px;"></div>
+    <div class="hinweis-grid">
+
+      <div id="spalteUnbekannt" style="display:none;">
+        <h2>Unbekannte Wörter</h2>
+        <div class="unbekannte-liste">
+          <span id="unbekannteHinweis"></span>
+          <div id="unbekannteTags" style="margin-top:8px;"></div>
+        </div>
+      </div>
+
+      <div id="spalteVarianten" style="display:none;">
+        <h2>Weitere Formen</h2>
+        <div class="varianten-liste">
+          <span class="varianten-einleitung">Zu diesen Wörtern führt das Wörterbuch mehrere kölsche Formen. Übersetzt wird mit der ersten.</span>
+          <div id="variantenListe" style="margin-top:8px;"></div>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -360,8 +398,8 @@
 </main>
 
 <!-- Skripte: Wörterbuch zuerst, dann Translator -->
-<script src="woerterbuch.js"></script>
-<script src="translator.js"></script>
+<script src="woerterbuch.js?v=3"></script>
+<script src="translator.js?v=3"></script>
 
 <script>
 // ════════════════════════════════════════════════════════════════════
@@ -408,6 +446,51 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 // ════════════════════════════════════════════════════════════════════
+//  Mehrfachformen – Hochzahl in der Ausgabe, Auflistung im Hinweiskasten
+// ════════════════════════════════════════════════════════════════════
+const HOCHZIFFERN = ["\u2070","\u00B9","\u00B2","\u00B3","\u2074","\u2075","\u2076","\u2077","\u2078","\u2079"];
+
+function hochzahl(n) {
+  return String(n).split("").map(z => HOCHZIFFERN[Number(z)]).join("");
+}
+
+// Die Marker stehen nur in der Anzeige. Alles, was weiterverarbeitet wird
+// – Modul 3, Vorlesen, Kopieren – läuft ohne sie.
+function ohneMarker(text) {
+  return String(text).replace(/[\u2070\u00B9\u00B2\u00B3\u2074-\u2079]/g, "");
+}
+
+function mitMarkern(text, varianten) {
+  if (!varianten || varianten.length === 0) return ohneMarker(text);
+  let ausgabe = ohneMarker(text);
+  varianten.forEach((v, i) => {
+    const marke = hochzahl(i + 1);
+    const form  = v.gewaehlt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regel = new RegExp("(?<![\\p{L}])(" + form + ")(?![\\p{L}])", "giu");
+    ausgabe = ausgabe.replace(regel, "$1" + marke);
+  });
+  return ausgabe;
+}
+
+function zeigeVarianten(varianten) {
+  const spalte = document.getElementById("spalteVarianten");
+  const liste  = document.getElementById("variantenListe");
+  if (!varianten || varianten.length === 0) {
+    liste.innerHTML = "";
+    spalte.style.display = "none";
+    return;
+  }
+  liste.innerHTML = varianten.map((v, i) =>
+    '<div class="varianten-zeile">'
+    + '<span class="varianten-nr">' + hochzahl(i + 1) + '</span>'
+    + '<span class="varianten-wort">' + v.gewaehlt + '</span>'
+    + '<span class="varianten-weitere"> \u2013 auch: ' + v.weitere.join(", ") + '</span>'
+    + '</div>'
+  ).join("");
+  spalte.style.display = "block";
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  MODUL 2 – Übersetzen
 // ════════════════════════════════════════════════════════════════════
 function uebersetzeMitStatistik() {
@@ -422,13 +505,16 @@ function uebersetzeMitStatistik() {
   const result = KoelschTranslator.uebersetze(eingabe);
   _letzterM2Result = result;
 
-  document.getElementById("ausgabe").value = result.uebersetzung;
+  document.getElementById("ausgabe").value = mitMarkern(result.uebersetzung, result.varianten);
   document.getElementById("ausgabe").classList.remove("llm-aktiv");
 
   // Modul 5: Vorlesen-Button aktivieren
   ttsStoppen();
   document.getElementById("btnVorlesen").disabled = false;
   setTtsStatus("neutral", "🔊 Bereit – kölsche Übersetzung vorlesen");
+
+  // Mehrfachformen anzeigen
+  zeigeVarianten(result.varianten);
 
   // Unbekannte Wörter anzeigen
   const unbCard = document.getElementById("unbekannteCard");
@@ -440,7 +526,7 @@ function uebersetzeMitStatistik() {
       .join(" ");
     document.getElementById("unbekannteHinweis").textContent =
       "Diese Wörter stehen nicht im Wörterbuch. Sie werden automatisch ergänzt.";
-    unbCard.style.display = "block";
+    document.getElementById("spalteUnbekannt").style.display = "block";
 
     // Modul 3 ohne Zutun des Nutzers anstoßen
     const workerUrl = document.getElementById("workerUrl").value.trim();
@@ -450,9 +536,15 @@ function uebersetzeMitStatistik() {
       setModul3Status("fehler", `${result.unbekannteWoerter.length} unbekannte(s) Wort/Wörter – automatische Ergänzung ist nicht eingerichtet (⚙ oben rechts)`);
     }
   } else {
-    unbCard.style.display = "none";
+    document.getElementById("spalteUnbekannt").style.display = "none";
     setModul3Status("fertig", "✓ Vollständig übersetzt");
   }
+
+  // Der Kasten erscheint, sobald eine der beiden Spalten etwas zu sagen hat
+  const spaltenSichtbar =
+       document.getElementById("spalteUnbekannt").style.display === "block"
+    || document.getElementById("spalteVarianten").style.display === "block";
+  unbCard.style.display = spaltenSichtbar ? "block" : "none";
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -510,7 +602,7 @@ async function llmFallbackAusfuehren() {
 
     // Ausgabe aktualisieren
     const ausgabe = document.getElementById("ausgabe");
-    ausgabe.value = data.uebersetzung;
+    ausgabe.value = mitMarkern(data.uebersetzung, diesesErgebnis.varianten);
     ausgabe.classList.add("llm-aktiv");
 
     // Tatsächlich gefüllte und verbliebene Lücken auszählen
@@ -580,6 +672,8 @@ function leeren() {
   document.getElementById("ausgabe").value  = "";
   document.getElementById("ausgabe").classList.remove("llm-aktiv");
   document.getElementById("unbekannteCard").style.display = "none";
+  document.getElementById("spalteUnbekannt").style.display = "none";
+  zeigeVarianten([]);
   if (_llmAbbruch) _llmAbbruch.abort();
   setModul3Status("inaktiv", "Bereit – unbekannte Wörter werden automatisch ergänzt");
   _letzterM2Result = null;
@@ -590,7 +684,7 @@ function leeren() {
 }
 
 function kopieren() {
-  const text = document.getElementById("ausgabe").value;
+  const text = ohneMarker(document.getElementById("ausgabe").value);
   if (!text) return;
   navigator.clipboard.writeText(text).then(() => {
     const btn = event.target;
@@ -687,7 +781,7 @@ function ttsVorlesen() {
   }
 
   // Text aus Ausgabe-Textarea holen (nimmt finales Ergebnis, egal ob M2 oder M3)
-  const rohtext = document.getElementById("ausgabe").value.trim();
+  const rohtext = ohneMarker(document.getElementById("ausgabe").value).trim();
   if (!rohtext) {
     setTtsStatus("fehler", "✗ Kein Text vorhanden – bitte zuerst übersetzen.");
     return;

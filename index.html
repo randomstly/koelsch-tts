@@ -178,19 +178,23 @@
     }
     .unbekannte-tag {
       display: inline-block;
-      background: #fff3f3;
-      border: 1px solid #ffcccc;
+      background: #f7f7f7;
+      border: 1px solid #e2e2e2;
       border-radius: 4px;
       padding: 1px 7px;
       margin: 2px;
       font-size: 0.82rem;
+      color: #333;
+    }
+    .unbekannte-tag.ohne-form {
+      background: #fff3f3;
+      border-color: #ffcccc;
       color: #a00;
     }
-    .unbekannte-tag.geloest {
-      background: #f0fff0;
-      border-color: #aaddaa;
-      color: #2a8a2a;
-      text-decoration: line-through;
+    .unbekannte-tag .zusatz {
+      color: #a00;
+      font-size: 0.78rem;
+      margin-left: 5px;
     }
 
     .beispiele {
@@ -336,7 +340,7 @@
     <div class="hinweis-grid">
 
       <div id="spalteUnbekannt" style="display:none;">
-        <h2>Unbekannte Wörter</h2>
+        <h2>Ohne Wörterbucheintrag</h2>
         <div class="unbekannte-liste">
           <span id="unbekannteHinweis"></span>
           <div id="unbekannteTags" style="margin-top:8px;"></div>
@@ -344,9 +348,9 @@
       </div>
 
       <div id="spalteVarianten" style="display:none;">
-        <h2>Weitere Formen</h2>
+        <h2>Mehrere Wörterbucheinträge</h2>
         <div class="varianten-liste">
-          <span class="varianten-einleitung">Zu diesen Wörtern gibt es mehrere kölsche Formen. Übersetzt wird mit der ersten.</span>
+          <span class="varianten-einleitung">Zu diesen Wörtern gibt es mehrere Einträge im Wörterbuch. Übersetzt wird mit dem ersten.</span>
           <div id="variantenListe" style="margin-top:8px;"></div>
         </div>
       </div>
@@ -487,15 +491,15 @@ function uebersetzeMitStatistik() {
   const unbTags = document.getElementById("unbekannteTags");
 
   if (result.unbekannteWoerter && result.unbekannteWoerter.length > 0) {
+    const workerUrl = document.getElementById("workerUrl").value.trim();
+
     unbTags.innerHTML = result.unbekannteWoerter
       .map(w => `<span class="unbekannte-tag" id="tag-${w.replace(/\W/g,'_')}">${w}</span>`)
       .join(" ");
-    document.getElementById("unbekannteHinweis").textContent =
-      "Diese Wörter stehen nicht im Wörterbuch. Sie werden automatisch ergänzt.";
+    setzeUnbekanntHinweis(Boolean(workerUrl));
     document.getElementById("spalteUnbekannt").style.display = "block";
 
     // Modul 3 ohne Zutun des Nutzers anstoßen
-    const workerUrl = document.getElementById("workerUrl").value.trim();
     if (workerUrl) {
       llmFallbackAusfuehren();
     } else {
@@ -575,14 +579,10 @@ async function llmFallbackAusfuehren() {
     // Tatsächlich gefüllte und verbliebene Lücken auszählen
     const offen    = (data.uebersetzung.match(/\[\?[^\]]*\?\]/g) || []).length;
     const gefuellt = Math.max(0, diesesErgebnis.statistik.unbekannt - offen);
-    document.getElementById("unbekannteHinweis").textContent = offen > 0
-      ? "Durchgestrichene Wörter wurden ergänzt, die übrigen konnten nicht übersetzt werden."
-      : "Alle Wörter wurden ergänzt.";
 
-    // Tags als gelöst markieren
+    // Nur die Wörter kennzeichnen, für die keine Form gebildet werden konnte
     unbekannteWoerter.forEach(w => {
-      const tag = document.getElementById("tag-" + w.replace(/\W/g, "_"));
-      if (tag) tag.className = "unbekannte-tag geloest";
+      if (data.uebersetzung.includes(`[?${w}?]`)) markiereOhneForm(w);
     });
 
     // Modul-3-Ergebnis speichern (für Modul 5)
@@ -595,6 +595,9 @@ async function llmFallbackAusfuehren() {
 
   } catch (err) {
     if (err.name === "AbortError") return;
+    // Es wurde nichts gebildet: Satz zurücknehmen, alle Wörter kennzeichnen
+    setzeUnbekanntHinweis(false);
+    unbekannteWoerter.forEach(markiereOhneForm);
     setModul3Status("fehler", `✗ Ergänzung fehlgeschlagen: ${err.message} – erneut übersetzen startet einen neuen Versuch`);
   } finally {
     _llmLaeuft = false;
@@ -622,6 +625,22 @@ function setModul3Status(typ, text, spinner = false) {
   } else {
     tx.textContent = text || "";
   }
+}
+
+function setzeUnbekanntHinweis(ergaenzungAktiv) {
+  document.getElementById("unbekannteHinweis").textContent = ergaenzungAktiv
+    ? "Zu diesen Wörtern gibt es keinen Eintrag im Wörterbuch. Die kölsche Form wurde automatisch gebildet."
+    : "Zu diesen Wörtern gibt es keinen Eintrag im Wörterbuch.";
+}
+
+function markiereOhneForm(wort) {
+  const tag = document.getElementById("tag-" + wort.replace(/\W/g, "_"));
+  if (!tag || tag.classList.contains("ohne-form")) return;
+  tag.classList.add("ohne-form");
+  const zusatz = document.createElement("span");
+  zusatz.className   = "zusatz";
+  zusatz.textContent = "— keine Form gefunden";
+  tag.appendChild(zusatz);
 }
 
 function einstellungenUmschalten() {
